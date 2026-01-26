@@ -120,7 +120,14 @@ def run_experiments(
         print("PHASE 1: DATA GENERATION")
         print("=" * 70)
 
-    data_dir = output_path / "data"
+    # Use custom data directory if specified in config, otherwise use output_path/data
+    custom_data_dir = data_config.get("data_dir")
+    if custom_data_dir:
+        data_dir = Path(custom_data_dir)
+        if verbose:
+            print(f"Using custom data directory: {data_dir}")
+    else:
+        data_dir = output_path / "data"
 
     # Check if data already exists
     existing_data = True
@@ -262,7 +269,6 @@ def run_experiments(
                     "temporal_geometric_alignment": metrics.temporal_geometric_alignment,
                     "norm_length_correlation": metrics.norm_length_correlation,
                     "angle_midpoint_correlation": metrics.angle_midpoint_correlation,
-                    "containment_auroc": metrics.containment_auroc,
                 },
                 "training": {
                     "best_epoch": result.best_epoch,
@@ -275,7 +281,6 @@ def run_experiments(
                     "temporal_geometric_alignment": metrics.temporal_geometric_alignment,
                     "norm_length_correlation": metrics.norm_length_correlation,
                     "angle_midpoint_correlation": metrics.angle_midpoint_correlation,
-                    "containment_auroc": metrics.containment_auroc,
                 },
                 "training": {
                     "best_epoch": result.best_epoch,
@@ -289,7 +294,6 @@ def run_experiments(
             if verbose:
                 print(f"  Alignment: {metrics.temporal_geometric_alignment:.4f}")
                 print(f"  Norm-Length Corr: {metrics.norm_length_correlation:.4f}")
-                print(f"  AUROC: {metrics.containment_auroc:.4f}")
 
     # Phase 3: Policy Learning
     if verbose:

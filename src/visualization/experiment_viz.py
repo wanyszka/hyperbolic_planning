@@ -562,8 +562,8 @@ def create_representation_table(results: Dict[str, Dict]) -> str:
     Returns:
         Formatted string table
     """
-    header = f"{'Condition':<30} {'Alignment':>10} {'Norm-Len':>10} {'Angle-Mid':>10} {'AUROC':>10}"
-    separator = "-" * 75
+    header = f"{'Condition':<30} {'Alignment':>10} {'Norm-Len':>10} {'Angle-Mid':>10}"
+    separator = "-" * 65
 
     lines = [separator, header, separator]
 
@@ -571,11 +571,10 @@ def create_representation_table(results: Dict[str, Dict]) -> str:
         alignment = metrics.get('temporal_geometric_alignment', 0)
         norm_corr = metrics.get('norm_length_correlation', 0)
         angle_corr = metrics.get('angle_midpoint_correlation', None)
-        auroc = metrics.get('containment_auroc', 0)
 
         angle_str = f"{angle_corr:.4f}" if angle_corr is not None else "N/A"
 
-        line = f"{condition:<30} {alignment:>10.4f} {norm_corr:>10.4f} {angle_str:>10} {auroc:>10.4f}"
+        line = f"{condition:<30} {alignment:>10.4f} {norm_corr:>10.4f} {angle_str:>10}"
         lines.append(line)
 
     lines.append(separator)
@@ -709,9 +708,9 @@ if __name__ == "__main__":
     print("\n6. Testing table creation...")
     rep_results = {
         "tight_temporal_hyp": {"temporal_geometric_alignment": 0.92, "norm_length_correlation": -0.75,
-                               "angle_midpoint_correlation": 0.85, "containment_auroc": 0.88},
+                               "angle_midpoint_correlation": 0.85},
         "loose_temporal_euc": {"temporal_geometric_alignment": 0.78, "norm_length_correlation": -0.55,
-                               "angle_midpoint_correlation": 0.70, "containment_auroc": 0.72},
+                               "angle_midpoint_correlation": 0.70},
     }
     print(create_representation_table(rep_results))
 

@@ -37,7 +37,6 @@ __all__ = [
     "compute_temporal_geometric_alignment",
     "compute_norm_length_correlation",
     "compute_angle_midpoint_correlation",
-    "compute_containment_auroc",
     "compute_embedding_statistics",
     "compute_all_representation_metrics",
     "compute_action_entropy",

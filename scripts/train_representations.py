@@ -124,7 +124,6 @@ def train_single_encoder(
             "temporal_geometric_alignment": metrics.temporal_geometric_alignment,
             "norm_length_correlation": metrics.norm_length_correlation,
             "angle_midpoint_correlation": metrics.angle_midpoint_correlation,
-            "containment_auroc": metrics.containment_auroc,
         },
         "training": {
             "best_epoch": result.best_epoch,
@@ -140,7 +139,6 @@ def train_single_encoder(
         print(f"  Norm-Length Correlation: {metrics.norm_length_correlation:.4f}")
         if metrics.angle_midpoint_correlation is not None:
             print(f"  Angle-Midpoint Correlation: {metrics.angle_midpoint_correlation:.4f}")
-        print(f"  Containment AUROC: {metrics.containment_auroc:.4f}")
         print(f"\nSaved encoder to: {model_path}")
 
     return {
@@ -149,7 +147,6 @@ def train_single_encoder(
             "temporal_geometric_alignment": metrics.temporal_geometric_alignment,
             "norm_length_correlation": metrics.norm_length_correlation,
             "angle_midpoint_correlation": metrics.angle_midpoint_correlation,
-            "containment_auroc": metrics.containment_auroc,
         },
         "training": {
             "best_epoch": result.best_epoch,

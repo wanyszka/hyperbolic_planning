@@ -87,6 +87,7 @@ policy:
 evaluation:
   n_episodes: 100                # Number of evaluation episodes
   deterministic_policy: true     # Use argmax for action selection
+  max_eval_steps: 100000        # Max steps per evaluation episode
 
   # Generalization test configurations
   generalization:

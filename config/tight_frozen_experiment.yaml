@@ -1,0 +1,112 @@
+# Experiment Configuration: Tight Dataset with Frozen Encoders
+# ============================================================
+# Uses only data/large/dataset_tight.pkl
+# Trains hyperbolic encoders, then GCBC-Single and GCBC-Interval with frozen encoders
+# No ablations
+
+# Environment Configuration
+environment:
+  n_bins: 100
+  max_eval_steps: 100000
+  success_threshold: 0.5
+
+# Data Configuration
+data:
+  # Point to the large dataset directory
+  data_dir: "data/large"
+  n_trajectories: 5000
+  validation_fraction: 0.1
+  test_fraction: 0.1
+  seed: 42
+
+  regimes:
+    tight:
+      max_length: 5000
+      description: "Nearly monotonic paths"
+
+# Representation Learning Configuration
+representation:
+  embedding_dims: [2]
+  geometries: ["hyperbolic"]
+
+  training:
+    batch_size: 256
+    n_negatives: 15
+    epochs: 100
+    learning_rate: 0.001
+    lr_min: 0.00001
+    lr_schedule: "cosine"
+    temperature: 0.1
+    l2_regularization: 0.01
+    early_stopping_patience: 20
+    gradient_clip: 1.0
+    checkpoint_every: 10
+
+  architecture:
+    hidden_sizes: [128, 128, 128, 128]
+    activation: "relu"
+    euclidean_layers: 2
+    hyperbolic_layers: 2
+
+# Policy Learning Configuration
+policy:
+  methods: ["gcbc_single", "gcbc_interval"]
+  encoder_modes: ["frozen"]  # Only frozen encoders, no finetuning
+
+  training:
+    batch_size: 256
+    epochs: 50
+    learning_rate: 0.001
+    lr_min: 0.00001
+    lr_schedule: "cosine"
+    early_stopping_patience: 10
+    gradient_clip: 1.0
+
+  architecture:
+    hidden_sizes: [64, 64]
+    activation: "relu"
+
+  # No ablations
+  ablation: null
+
+# Evaluation Configuration
+evaluation:
+  n_episodes: 100
+  deterministic_policy: true
+  max_eval_steps: 100000
+
+  generalization:
+    start_states: [0.0, 0.1, 0.2, 0.3, 0.4]
+    goal_states: [0.6, 0.7, 0.8, 0.9, 1.0]
+    n_random_pairs: 50
+
+# Logging Configuration
+logging:
+  log_every_n_epochs: 1
+  save_every_n_epochs: 10
+  use_wandb: false
+  wandb_project: "interval_representations"
+  wandb_entity: null
+  verbose: true
+  print_every: 5
+
+# Experiment Runner Configuration
+experiment:
+  run_all_combinations: false
+
+  selected_configs:
+    data_regimes: ["tight"]
+    geometries: ["hyperbolic"]
+    embedding_dims: [2]
+    encoder_modes: ["frozen"]
+
+  n_parallel_jobs: 1
+  results_dir: "results"
+  save_intermediate: true
+
+# Random Seeds for Reproducibility
+seeds:
+  data_generation: 42
+  representation_training: 123
+  policy_training: 456
+  evaluation: 789
