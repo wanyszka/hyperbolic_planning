@@ -1,0 +1,136 @@
+# Experimental Configuration for Interval Representations in Goal-Conditioned Planning
+# ====================================================================================
+
+# Environment Configuration
+environment:
+  n_bins: 100                    # Number of discrete bins on [0, 1]
+  max_eval_steps: 100000            # Maximum steps for evaluation episodes
+  success_threshold: 0.5         # Success if within 1/(2*n_bins) of goal
+
+# Data Generation Configuration
+data:
+  n_trajectories: 5000          # Number of successful trajectories to generate
+  validation_fraction: 0.1       # Fraction held out for validation
+  test_fraction: 0.1             # Fraction held out for testing
+  seed: 42                       # Random seed for reproducibility
+
+  # Data regimes with different slack factors
+  regimes:
+    tight:
+      max_length: 5000            # Slack factor: 1.2
+      description: "Nearly monotonic paths"
+    moderate:
+      max_length: 10000            # Slack factor: 1.5
+      description: "Some backtracking"
+    loose:
+      max_length: 50000            # Slack factor: 2.0
+      description: "Significant wandering"
+    very_loose:
+      max_length: 100000            # Slack factor: 3.0
+      description: "Heavy backtracking"
+
+# Representation Learning Configuration
+representation:
+  embedding_dims: [2, 8, 16]     # Embedding dimensions to test
+  geometries: ["euclidean", "hyperbolic"]  # Embedding geometries
+
+  # Training hyperparameters
+  training:
+    batch_size: 256
+    n_negatives: 15             # In-batch negatives (batch_size - 1)
+    epochs: 100
+    learning_rate: 0.001
+    lr_min: 0.00001              # Minimum LR for cosine decay
+    lr_schedule: "cosine"
+    temperature: 0.1
+    temperature_ablation: [0.05, 0.1, 0.2, 0.5]
+    l2_regularization: 0.01
+    early_stopping_patience: 20
+    gradient_clip: 1.0
+    checkpoint_every: 10         # Save checkpoint every N epochs
+
+  # Network architecture
+  architecture:
+    hidden_sizes: [128, 128, 128, 128]  # 4 hidden layers as specified
+    activation: "relu"
+    # For hyperbolic: first 2 layers Euclidean, last 2 hyperbolic
+    euclidean_layers: 2
+    hyperbolic_layers: 2
+
+# Policy Learning Configuration
+policy:
+  methods: ["gcbc_single", "gcbc_interval"]
+  encoder_modes: ["frozen", "finetuned"]  # Whether to finetune encoder
+
+  # Training hyperparameters
+  training:
+    batch_size: 256
+    epochs: 50
+    learning_rate: 0.001
+    lr_min: 0.00001
+    lr_schedule: "cosine"
+    early_stopping_patience: 10
+    gradient_clip: 1.0
+
+  # Network architecture
+  architecture:
+    hidden_sizes: [64, 64]       # Default hidden sizes
+    hidden_sizes_ablation: [[32], [64, 64], [128, 128, 128]]  # Ablation sizes
+    activation: "relu"
+
+  # Hyperparameter ablation
+  ablation:
+    hidden_sizes: [[32], [64, 64], [128, 128, 128]]
+    learning_rates: [0.0001, 0.001, 0.01]
+
+# Evaluation Configuration
+evaluation:
+  n_episodes: 100                # Number of evaluation episodes
+  deterministic_policy: true     # Use argmax for action selection
+
+  # Generalization test configurations
+  generalization:
+    # Test with different start states (goal remains 1)
+    start_states: [0.0, 0.1, 0.2, 0.3, 0.4]
+    # Test with different goal states (start remains 0)
+    goal_states: [0.6, 0.7, 0.8, 0.9, 1.0]
+    # Number of random (start, goal) pairs for full generalization test
+    n_random_pairs: 50
+
+# Logging Configuration
+logging:
+  log_every_n_epochs: 1          # Log metrics every N epochs
+  save_every_n_epochs: 10        # Save model checkpoints every N epochs
+  use_wandb: false               # Set to true to enable W&B logging
+  wandb_project: "interval_representations"
+  wandb_entity: null             # Your W&B entity/username
+
+  # Console output verbosity
+  verbose: true
+  print_every: 5                 # Print status every N epochs
+
+# Experiment Runner Configuration
+experiment:
+  # Run all combinations or specific subset
+  run_all_combinations: false    # If true, runs full 148 configurations
+
+  # Specific configurations to run (if not running all)
+  selected_configs:
+    data_regimes: ["tight", "moderate"]
+    geometries: ["hyperbolic"]
+    embedding_dims: [2]
+    encoder_modes: ["frozen"]
+
+  # Parallelization
+  n_parallel_jobs: 1             # Number of parallel experiments
+
+  # Results
+  results_dir: "results"
+  save_intermediate: true        # Save intermediate results during training
+
+# Random Seeds for Reproducibility
+seeds:
+  data_generation: 42
+  representation_training: 123
+  policy_training: 456
+  evaluation: 789
