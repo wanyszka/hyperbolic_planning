@@ -1,0 +1,141 @@
+# Ablation Experiments: Temperature and Negatives
+# ================================================
+# Two ablation experiments:
+# 1. high_temp: Higher temperature (0.5) to spread embeddings in Poincare ball
+# 2. few_negatives: Only 3 negatives per sample instead of 15
+#
+# Run with: python -m scripts.run_ablation_experiments --config config/ablation_experiments.yaml
+
+# Environment Configuration (same as base)
+environment:
+  n_bins: 100
+  max_eval_steps: 100000
+  success_threshold: 0.5
+
+# Data Configuration (same as base)
+data:
+  data_dir: "data"
+  n_trajectories: 5000
+  validation_fraction: 0.1
+  test_fraction: 0.1
+  seed: 42
+
+  regimes:
+    tight:
+      max_length: 5000
+      description: "Nearly monotonic paths"
+
+# Ablation Configurations
+# Each ablation trains a separate encoder with modified hyperparameters
+ablations:
+  # Ablation 1: Higher temperature to spread embeddings
+  # Current temp=0.1 concentrates embeddings; higher temp=0.5 should spread them out
+  high_temp:
+    description: "Higher InfoNCE temperature (0.5) to spread embeddings"
+    results_dir: "results_high_temp"
+    representation:
+      embedding_dims: [2]
+      geometries: ["hyperbolic"]
+      training:
+        batch_size: 256
+        n_negatives: 15
+        epochs: 100
+        learning_rate: 0.001
+        lr_min: 0.00001
+        lr_schedule: "cosine"
+        temperature: 0.5  # CHANGED: 0.1 -> 0.5 (higher = softer softmax = more spread)
+        l2_regularization: 0.01
+        early_stopping_patience: 20
+        gradient_clip: 1.0
+        checkpoint_every: 10
+      architecture:
+        hidden_sizes: [128, 128, 128, 128]
+        activation: "relu"
+        euclidean_layers: 2
+        hyperbolic_layers: 2
+
+  # Ablation 2: Fewer negatives per sample
+  # Tests impact of negative sampling on representation quality
+  few_negatives:
+    description: "Only 3 negatives per sample instead of 15"
+    results_dir: "results_few_neg"
+    representation:
+      embedding_dims: [2]
+      geometries: ["hyperbolic"]
+      training:
+        batch_size: 256
+        n_negatives: 3  # CHANGED: 15 -> 3
+        epochs: 100
+        learning_rate: 0.001
+        lr_min: 0.00001
+        lr_schedule: "cosine"
+        temperature: 0.1
+        l2_regularization: 0.01
+        early_stopping_patience: 20
+        gradient_clip: 1.0
+        checkpoint_every: 10
+      architecture:
+        hidden_sizes: [128, 128, 128, 128]
+        activation: "relu"
+        euclidean_layers: 2
+        hyperbolic_layers: 2
+
+# Policy Learning Configuration (same for all ablations)
+policy:
+  methods: ["gcbc_single", "gcbc_interval"]
+  encoder_modes: ["frozen"]
+
+  training:
+    batch_size: 4096
+    epochs: 50
+    learning_rate: 0.001
+    lr_min: 0.00001
+    lr_schedule: "cosine"
+    early_stopping_patience: 10
+    gradient_clip: 1.0
+    max_samples_per_trajectory: 100
+
+  architecture:
+    hidden_sizes: [64, 64]
+    activation: "relu"
+
+  ablation: null
+
+# Evaluation Configuration
+evaluation:
+  n_episodes: 100
+  deterministic_policy: true
+  max_eval_steps: 100000
+
+  generalization:
+    start_states: [0.0, 0.1, 0.2, 0.3, 0.4]
+    goal_states: [0.6, 0.7, 0.8, 0.9, 1.0]
+    n_random_pairs: 50
+
+# Logging Configuration
+logging:
+  log_every_n_epochs: 1
+  save_every_n_epochs: 10
+  use_wandb: false
+  wandb_project: "interval_representations"
+  wandb_entity: null
+  verbose: true
+  print_every: 5
+
+# Experiment Runner Configuration
+experiment:
+  run_all_combinations: false
+  selected_configs:
+    data_regimes: ["tight"]
+    geometries: ["hyperbolic"]
+    embedding_dims: [2]
+    encoder_modes: ["frozen"]
+  n_parallel_jobs: 1
+  save_intermediate: true
+
+# Random Seeds for Reproducibility
+seeds:
+  data_generation: 42
+  representation_training: 123
+  policy_training: 456
+  evaluation: 789

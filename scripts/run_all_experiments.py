@@ -316,8 +316,13 @@ def run_experiments(
         train_trajs, train_acts = split["train"]
         val_trajs, val_acts = split["val"]
 
-        train_dataset = PolicyTrainingDataset(train_trajs, train_acts)
-        val_dataset = PolicyTrainingDataset(val_trajs, val_acts)
+        max_samples_per_traj = policy_training.get("max_samples_per_trajectory", None)
+        train_dataset = PolicyTrainingDataset(
+            train_trajs, train_acts, max_samples_per_trajectory=max_samples_per_traj
+        )
+        val_dataset = PolicyTrainingDataset(
+            val_trajs, val_acts, max_samples_per_trajectory=max_samples_per_traj
+        )
 
         policy_save_dir = output_path / "policies" / regime
         policy_save_dir.mkdir(parents=True, exist_ok=True)

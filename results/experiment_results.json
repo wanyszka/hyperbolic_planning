@@ -1,43 +1,29 @@
 {
-  "timestamp": "2026-01-24T08:40:16.024603",
+  "timestamp": "2026-01-26T15:10:08.419139",
   "config": {
     "environment": {
-      "n_bins": 10,
-      "max_eval_steps": 10000,
+      "n_bins": 100,
+      "max_eval_steps": 100000,
       "success_threshold": 0.5
     },
     "data": {
-      "n_trajectories": 10000,
+      "data_dir": "data",
+      "n_trajectories": 5000,
       "validation_fraction": 0.1,
       "test_fraction": 0.1,
       "seed": 42,
       "regimes": {
         "tight": {
-          "max_length": 50,
+          "max_length": 5000,
           "description": "Nearly monotonic paths"
-        },
-        "moderate": {
-          "max_length": 100,
-          "description": "Some backtracking"
-        },
-        "loose": {
-          "max_length": 200,
-          "description": "Significant wandering"
-        },
-        "very_loose": {
-          "max_length": 1000,
-          "description": "Heavy backtracking"
         }
       }
     },
     "representation": {
       "embedding_dims": [
-        2,
-        8,
-        16
+        2
       ],
       "geometries": [
-        "euclidean",
         "hyperbolic"
       ],
       "training": {
@@ -48,12 +34,6 @@
         "lr_min": 1e-05,
         "lr_schedule": "cosine",
         "temperature": 0.1,
-        "temperature_ablation": [
-          0.05,
-          0.1,
-          0.2,
-          0.5
-        ],
         "l2_regularization": 0.01,
         "early_stopping_patience": 20,
         "gradient_clip": 1.0,
@@ -77,64 +57,31 @@
         "gcbc_interval"
       ],
       "encoder_modes": [
-        "frozen",
-        "finetuned"
+        "frozen"
       ],
       "training": {
-        "batch_size": 256,
+        "batch_size": 4096,
         "epochs": 50,
         "learning_rate": 0.001,
         "lr_min": 1e-05,
         "lr_schedule": "cosine",
         "early_stopping_patience": 10,
-        "gradient_clip": 1.0
+        "gradient_clip": 1.0,
+        "max_samples_per_trajectory": 100
       },
       "architecture": {
         "hidden_sizes": [
           64,
           64
         ],
-        "hidden_sizes_ablation": [
-          [
-            32
-          ],
-          [
-            64,
-            64
-          ],
-          [
-            128,
-            128,
-            128
-          ]
-        ],
         "activation": "relu"
       },
-      "ablation": {
-        "hidden_sizes": [
-          [
-            32
-          ],
-          [
-            64,
-            64
-          ],
-          [
-            128,
-            128,
-            128
-          ]
-        ],
-        "learning_rates": [
-          0.0001,
-          0.001,
-          0.01
-        ]
-      }
+      "ablation": null
     },
     "evaluation": {
       "n_episodes": 100,
-      "deterministic_policy": true,
+      "deterministic_policy": false,
+      "max_eval_steps": 100000,
       "generalization": {
         "start_states": [
           0.0,
@@ -166,8 +113,7 @@
       "run_all_combinations": false,
       "selected_configs": {
         "data_regimes": [
-          "tight",
-          "moderate"
+          "tight"
         ],
         "geometries": [
           "hyperbolic"
@@ -192,71 +138,48 @@
   },
   "representations": {
     "tight_hyperbolic_dim2": {
-      "metrics": {},
-      "training": {},
+      "metrics": {
+        "temporal_geometric_alignment": 0.5128,
+        "norm_length_correlation": -0.15996611654491483,
+        "angle_midpoint_correlation": -0.6040340837905818
+      },
+      "training": {
+        "best_epoch": 75,
+        "best_val_loss": 1.946300059556961
+      },
       "model_path": "results\\representations\\tight_hyperbolic_dim2\\encoder_final.pt"
-    },
-    "moderate_hyperbolic_dim2": {
-      "metrics": {},
-      "training": {},
-      "model_path": "results\\representations\\moderate_hyperbolic_dim2\\encoder_final.pt"
     }
   },
   "policies": {
     "tight_gcbc_single": {
-      "training": {},
+      "training": {
+        "best_epoch": 38,
+        "best_val_loss": 1.0901376340631688
+      },
       "model_path": "results\\policies\\tight\\gcbc_single.pt"
     },
     "tight_hyperbolic_dim2_frozen": {
       "training": {
-        "best_epoch": 10,
-        "best_val_loss": 1.0536848837730601
+        "best_epoch": 37,
+        "best_val_loss": 1.0970628513519671
       },
       "model_path": "results\\policies\\tight\\gcbc_interval_tight_hyperbolic_dim2_frozen.pt"
-    },
-    "moderate_gcbc_single": {
-      "training": {
-        "best_epoch": 12,
-        "best_val_loss": 1.0875689018541994
-      },
-      "model_path": "results\\policies\\moderate\\gcbc_single.pt"
-    },
-    "moderate_hyperbolic_dim2_frozen": {
-      "training": {
-        "best_epoch": 19,
-        "best_val_loss": 1.087567711282691
-      },
-      "model_path": "results\\policies\\moderate\\gcbc_interval_moderate_hyperbolic_dim2_frozen.pt"
     }
   },
   "evaluations": {
     "tight_gcbc_single": {
       "success_rate": 1.0,
-      "mean_steps": 10.0,
-      "median_steps": 10.0,
-      "path_efficiency": 1.0,
-      "action_entropy": 1.0487127900123596
+      "mean_steps": 3044.55,
+      "median_steps": 2687.0,
+      "path_efficiency": 0.03925077760455244,
+      "action_entropy": 1.09738534747486
     },
     "tight_hyperbolic_dim2_frozen": {
       "success_rate": 1.0,
-      "mean_steps": 10.0,
-      "median_steps": 10.0,
-      "path_efficiency": 1.0,
-      "action_entropy": 1.050602757930756
-    },
-    "moderate_gcbc_single": {
-      "success_rate": 1.0,
-      "mean_steps": 10.0,
-      "median_steps": 10.0,
-      "path_efficiency": 1.0,
-      "action_entropy": 1.0850653409957882
-    },
-    "moderate_hyperbolic_dim2_frozen": {
-      "success_rate": 1.0,
-      "mean_steps": 10.0,
-      "median_steps": 10.0,
-      "path_efficiency": 1.0,
-      "action_entropy": 1.0855244874954224
+      "mean_steps": 2498.58,
+      "median_steps": 2228.0,
+      "path_efficiency": 0.04680984906596089,
+      "action_entropy": 1.0975250803612568
     }
   }
 }

@@ -3,7 +3,7 @@
 import torch
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
-from typing import List, Tuple, Dict, Literal
+from typing import List, Tuple, Dict, Literal, Optional
 
 
 
@@ -218,6 +218,8 @@ class PolicyTrainingDataset(Dataset):
         trajectories: List of trajectory state sequences
         actions: List of action sequences (parallel to trajectories)
         goal_type: "final" (use trajectory endpoint) or "random" (sample from future states)
+        max_samples_per_trajectory: Maximum samples to extract per trajectory (None = all).
+            Useful for limiting dataset size when trajectories are very long.
         seed: Random seed
     """
 
@@ -226,11 +228,13 @@ class PolicyTrainingDataset(Dataset):
         trajectories: List[List[float]],
         actions: List[List[int]],
         goal_type: Literal["final", "random"] = "final",
+        max_samples_per_trajectory: Optional[int] = None,
         seed: int = 42,
     ):
         self.trajectories = trajectories
         self.actions_list = actions
         self.goal_type = goal_type
+        self.max_samples_per_trajectory = max_samples_per_trajectory
 
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -246,9 +250,23 @@ class PolicyTrainingDataset(Dataset):
 
         for traj, acts in zip(self.trajectories, self.actions_list):
             T = len(traj) - 1  # Number of transitions
+            if T <= 0:
+                continue
             final_state = traj[-1]
 
-            for t in range(T):
+            # Determine which timesteps to sample
+            if self.max_samples_per_trajectory is not None and T > self.max_samples_per_trajectory:
+                # Subsample: half evenly spaced, half random for diversity
+                n_samples = self.max_samples_per_trajectory
+                n_even = n_samples // 2
+                n_random = n_samples - n_even
+                even_indices = np.linspace(0, T - 1, n_even, dtype=int).tolist()
+                random_indices = np.random.choice(T, size=min(n_random, T), replace=False).tolist()
+                timesteps = sorted(set(even_indices + random_indices))
+            else:
+                timesteps = range(T)
+
+            for t in timesteps:
                 state = traj[t]
                 action = acts[t]
 
@@ -367,6 +385,7 @@ def create_policy_dataloader(
     actions: List[List[int]],
     batch_size: int = 256,
     goal_type: Literal["final", "random"] = "final",
+    max_samples_per_trajectory: Optional[int] = None,
     seed: int = 42,
     num_workers: int = 0,
     shuffle: bool = True,
@@ -379,6 +398,7 @@ def create_policy_dataloader(
         actions: List of action sequences
         batch_size: Batch size
         goal_type: "final" or "random"
+        max_samples_per_trajectory: Maximum samples per trajectory (None = all)
         seed: Random seed
         num_workers: DataLoader workers
         shuffle: Whether to shuffle
@@ -390,6 +410,7 @@ def create_policy_dataloader(
         trajectories=trajectories,
         actions=actions,
         goal_type=goal_type,
+        max_samples_per_trajectory=max_samples_per_trajectory,
         seed=seed,
     )
 

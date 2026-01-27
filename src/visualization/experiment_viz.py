@@ -272,6 +272,7 @@ def plot_angle_vs_midpoint(
 
     intervals = []
     midpoints = []
+    lengths = []
 
     valid_trajs = [t for t in trajectories if len(t) >= 2]
 
@@ -286,6 +287,7 @@ def plot_angle_vs_midpoint(
         s_i, s_j = traj[i], traj[j]
         intervals.append([s_i, s_j])
         midpoints.append((s_i + s_j) / 2)
+        lengths.append(abs(s_j - s_i))
 
     intervals_tensor = torch.tensor(intervals, dtype=torch.float32).to(device)
 
@@ -305,8 +307,8 @@ def plot_angle_vs_midpoint(
     # Create plot
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    scatter = ax.scatter(midpoints, angles, c=midpoints, cmap='viridis', alpha=0.4, s=10)
-    plt.colorbar(scatter, ax=ax, label='Interval Midpoint')
+    scatter = ax.scatter(midpoints, angles, c=lengths, cmap='viridis', alpha=0.4, s=10)
+    plt.colorbar(scatter, ax=ax, label='Interval Length')
 
     # Add trend line
     z = np.polyfit(midpoints, angles, 1)

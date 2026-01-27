@@ -370,6 +370,43 @@ class TestPolicyTrainingDataset:
             assert 0.0 <= state.item() <= 1.0
             assert 0.0 <= goal.item() <= 1.0
 
+    def test_max_samples_per_trajectory_limits_size(self):
+        """Test that max_samples_per_trajectory limits dataset size."""
+        # Create long trajectories
+        long_trajs = [[i / 1000 for i in range(1001)] for _ in range(10)]
+        long_acts = [[0] * 1000 for _ in range(10)]  # 1000 transitions each
+
+        # Without limit: should have 10 * 1000 = 10000 samples
+        dataset_full = PolicyTrainingDataset(
+            trajectories=long_trajs,
+            actions=long_acts,
+        )
+        assert len(dataset_full) == 10000
+
+        # With limit of 50: should have at most 10 * 50 = 500 samples
+        dataset_limited = PolicyTrainingDataset(
+            trajectories=long_trajs,
+            actions=long_acts,
+            max_samples_per_trajectory=50,
+        )
+        assert len(dataset_limited) <= 500
+        assert len(dataset_limited) > 0
+
+    def test_max_samples_per_trajectory_no_effect_on_short(self, sample_trajectories, sample_actions):
+        """Test that max_samples_per_trajectory doesn't affect short trajectories."""
+        # sample_trajectories have ~20 elements each
+        dataset_limited = PolicyTrainingDataset(
+            trajectories=sample_trajectories,
+            actions=sample_actions,
+            max_samples_per_trajectory=100,  # Higher than trajectory lengths
+        )
+        dataset_full = PolicyTrainingDataset(
+            trajectories=sample_trajectories,
+            actions=sample_actions,
+        )
+        # Should be the same since trajectories are shorter than limit
+        assert len(dataset_limited) == len(dataset_full)
+
 
 # =============================================================================
 # Train/Val/Test Split Tests
