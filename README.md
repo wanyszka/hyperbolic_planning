@@ -44,6 +44,8 @@ hyperbolic_planning/
 │   │   ├── environment.py       # 1D random walk environment
 │   │   ├── data_generation.py   # Trajectory data generation
 │   │   └── datasets/            # Dataset classes
+│   │       ├── interval_dataset.py      # Synthetic interval pairs for contrastive learning
+│   │       └── trajectory_dataset.py    # Trajectory-based contrastive & policy datasets
 │   ├── models/
 │   │   ├── encoders.py          # Euclidean & Hyperbolic interval encoders
 │   │   ├── policies.py          # GCBC policy networks
@@ -62,10 +64,18 @@ hyperbolic_planning/
 │   ├── train_representations.py # Train interval encoders
 │   ├── train_policies.py        # Train GCBC policies
 │   ├── evaluate.py              # Evaluation script
-│   └── run_all_experiments.py   # Full experiment pipeline
+│   ├── run_all_experiments.py   # Full experiment pipeline
+│   ├── run_ablation_experiments.py  # Temperature & negative sampling ablations
+│   └── generate_figures.py      # Publication-ready visualizations
 ├── config/
-│   └── experiment_config.yaml   # Experiment configuration
+│   ├── experiment_config.yaml       # Main experiment configuration
+│   ├── tight_frozen_experiment.yaml # Focused experiments with frozen encoders
+│   └── ablation_experiments.yaml    # Ablation study configurations
+├── data/                        # Generated trajectory datasets (*.pkl)
+├── results/                     # Experiment outputs (models, figures, logs)
 ├── tests/                       # Unit tests
+├── Intervals_Hyper.ipynb        # Interactive hyperbolic interval experiments
+├── MDP_Hyper.ipynb              # MDP formulation and planning analysis
 ├── main.py                      # Quick start script
 └── pyproject.toml               # Package configuration
 ```
@@ -146,22 +156,56 @@ python scripts/evaluate.py
 
 # Or run the full pipeline
 python scripts/run_all_experiments.py
+
+# Run ablation studies (temperature, negative sampling)
+python scripts/run_ablation_experiments.py
+
+# Generate publication-ready figures
+python scripts/generate_figures.py
 ```
+
+## Notebooks
+
+Interactive Jupyter notebooks for exploration and analysis (located at project root):
+
+| Notebook | Description |
+|----------|-------------|
+| `Intervals_Hyper.ipynb` | Interactive experiments with hyperbolic interval encoding, visualizations of embeddings |
+| `MDP_Hyper.ipynb` | MDP formulation, planning analysis, and state transition probabilities |
 
 ## Configuration
 
-Edit `config/experiment_config.yaml` to customize:
-- Environment parameters
-- Data generation settings
-- Model architectures
-- Training hyperparameters
-- Evaluation settings
+Configuration files in `config/`:
+
+| File | Description |
+|------|-------------|
+| `experiment_config.yaml` | Main configuration with all regimes, geometries, and hyperparameters |
+| `tight_frozen_experiment.yaml` | Simplified config for focused experiments with frozen encoders |
+| `ablation_experiments.yaml` | Ablation studies for temperature and negative sampling |
+
+Key configuration sections:
+- **environment**: Grid resolution, max evaluation steps
+- **data**: Number of trajectories, slack factors per regime
+- **representation**: Embedding dimensions, geometries, training hyperparameters
+- **policy**: GCBC methods, architecture, training settings
+- **evaluation**: Episode count, deterministic vs stochastic policies
 
 ## Testing
 
 ```bash
 pytest tests/
 ```
+
+Test coverage includes:
+- `test_environment.py` - RandomWalkEnv functionality
+- `test_data_generation.py` - Data generation across regimes
+- `test_interval_dataset.py` - Synthetic interval dataset generation
+- `test_trajectory_dataset.py` - Trajectory-based contrastive sampling
+- `test_models.py` - Encoder and policy forward passes
+- `test_loss.py` - InfoNCE loss computation
+- `test_training.py` - Training loops
+- `test_metrics.py` - Metric computation
+- `test_evaluation.py` - Policy evaluation
 
 ## License
 
