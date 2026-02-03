@@ -10,7 +10,6 @@ from src.visualization import (
     test_specificity_gradient,
     test_geodesic,
     plot_all_intervals_with_geodesics,
-    analyze_geodesic_apex_conjecture,
 )
 
 
@@ -67,9 +66,6 @@ def main():
 
     print("\n--- All Intervals Visualization ---")
     embeddings = plot_all_intervals_with_geodesics(model, num_points=5)
-
-    print("\n--- Geodesic Apex Conjecture Analysis ---")
-    results, embeddings, grid, intervals = analyze_geodesic_apex_conjecture(model, num_points=5)
 
     print("\nDone!")
 
