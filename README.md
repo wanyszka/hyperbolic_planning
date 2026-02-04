@@ -218,8 +218,8 @@ If you use this code in your research, please cite:
 ```bibtex
 @software{hyperbolic_planning,
   title={Hyperbolic Planning: Interval Representations for Goal-Conditioned Learning},
-  author={Wojtek},
+  author={Wojciech Anyszka},
   year={2025},
-  url={https://github.com/yourusername/hyperbolic-planning}
+  url={https://github.com/wanyszka/hyperbolic-planning}
 }
 ```
