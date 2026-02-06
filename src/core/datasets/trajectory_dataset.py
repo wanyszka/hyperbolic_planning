@@ -4,6 +4,30 @@ import torch
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from typing import List, Tuple, Dict, Literal, Optional
+from dataclasses import dataclass, field
+from enum import Enum
+
+
+class NegativeFormationType(Enum):
+    """Type of negative formation for in-batch contrastive learning."""
+    PLAIN = "plain"           # Negatives are positives from other samples in batch
+    MIXED = "mixed"           # Cross-mix: first coord from one, second from another
+    MIXED_SWAPPED = "mixed_swapped"  # Mixed + optional coordinate swap
+
+
+@dataclass
+class AnchorSamplingConfig:
+    """Configuration for anchor interval sampling."""
+    use_geometric: bool = False
+    geometric_p: float = 0.3      # Higher = shorter anchors on average
+    min_anchor_length: int = 1    # Minimum anchor span (in indices)
+
+
+@dataclass
+class InBatchSamplingConfig:
+    """Full configuration for in-batch contrastive dataset."""
+    anchor_sampling: AnchorSamplingConfig = field(default_factory=AnchorSamplingConfig)
+    experiment_name: str = "default"
 
 
 
@@ -145,7 +169,7 @@ class InBatchContrastiveDataset(Dataset):
     Args:
         trajectories: List of trajectory state sequences
         num_samples: Number of samples to generate
-        sampling_config: Configuration for sampling strategy
+        config: Sampling configuration (optional, uses defaults if None)
         seed: Random seed
     """
 
@@ -153,10 +177,12 @@ class InBatchContrastiveDataset(Dataset):
         self,
         trajectories: List[List[float]],
         num_samples: int = 10000,
+        config: Optional[InBatchSamplingConfig] = None,
         seed: int = 42,
     ):
         self.trajectories = trajectories
         self.num_samples = num_samples
+        self.config = config or InBatchSamplingConfig()
 
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -185,6 +211,63 @@ class InBatchContrastiveDataset(Dataset):
             torch.tensor(positives, dtype=torch.float32),
         )
 
+    def _sample_anchor_indices_uniform(self, T: int) -> Tuple[int, int]:
+        """
+        Sample anchor indices uniformly (default behavior).
+
+        Args:
+            T: Maximum index (trajectory length - 1)
+
+        Returns:
+            Tuple (i, j) where i <= j
+        """
+        j = np.random.randint(0, T + 1)
+        i = np.random.randint(0, j + 1)
+        return i, j
+
+    def _sample_anchor_indices_geometric(self, T: int) -> Tuple[int, int]:
+        """
+        Sample anchor indices with geometric distribution for length.
+
+        The length (j - i) follows a geometric distribution, biasing
+        towards shorter intervals.
+
+        Args:
+            T: Maximum index (trajectory length - 1)
+
+        Returns:
+            Tuple (i, j) where i <= j
+        """
+        p = self.config.anchor_sampling.geometric_p
+        min_len = self.config.anchor_sampling.min_anchor_length
+
+        # Handle edge case where T is too small
+        if T < min_len:
+            return 0, T
+
+        # Sample length from geometric distribution
+        # Geometric gives P(X=k) = (1-p)^(k-1) * p for k = 1, 2, 3, ...
+        max_attempts = 100
+        for _ in range(max_attempts):
+            length = np.random.geometric(p)
+            if min_len <= length <= T:
+                break
+            if length > T:
+                # Truncate if too long
+                length = T
+                if length >= min_len:
+                    break
+        else:
+            # Fallback to uniform if geometric fails
+            return self._sample_anchor_indices_uniform(T)
+
+        # Sample starting position uniformly, ensuring [i, i+length] fits
+        max_i = T - length
+        i = np.random.randint(0, max_i + 1) if max_i >= 0 else 0
+        j = i + length
+
+        return i, j
+
     def _generate_pair(self) -> Tuple[List[float], List[float]]:
         """Generate a single (anchor, positive) pair."""
         traj_idx = np.random.choice(self.valid_traj_indices)
@@ -192,8 +275,10 @@ class InBatchContrastiveDataset(Dataset):
         T = len(traj) - 1
 
         # Sample anchor interval [i, j] where i <= j
-        j = np.random.randint(0, T + 1)
-        i = np.random.randint(0, j + 1)
+        if self.config.anchor_sampling.use_geometric:
+            i, j = self._sample_anchor_indices_geometric(T)
+        else:
+            i, j = self._sample_anchor_indices_uniform(T)
 
         # Sample positive (subinterval): i <= k <= l <= j
         l = np.random.randint(i, j + 1)
@@ -418,5 +503,59 @@ def create_policy_dataloader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
+        num_workers=num_workers,
+    )
+
+
+def create_in_batch_dataloader(
+    trajectories: List[List[float]],
+    batch_size: int = 256,
+    num_samples: int = 10000,
+    seed: int = 42,
+    num_workers: int = 0,
+    use_geometric_sampling: bool = False,
+    geometric_p: float = 0.3,
+    min_anchor_length: int = 1,
+    experiment_name: str = "default",
+) -> DataLoader:
+    """
+    Create a DataLoader for in-batch contrastive learning with configurable sampling.
+
+    This is the recommended factory function for ablation studies on sampling strategies.
+
+    Args:
+        trajectories: List of trajectories
+        batch_size: Batch size
+        num_samples: Number of samples to generate
+        seed: Random seed
+        num_workers: DataLoader workers
+        use_geometric_sampling: Use geometric distribution for anchor length
+        geometric_p: Geometric distribution parameter (higher = shorter anchors)
+        min_anchor_length: Minimum anchor span in indices
+        experiment_name: Name for ablation tracking
+
+    Returns:
+        DataLoader instance
+    """
+    config = InBatchSamplingConfig(
+        anchor_sampling=AnchorSamplingConfig(
+            use_geometric=use_geometric_sampling,
+            geometric_p=geometric_p,
+            min_anchor_length=min_anchor_length,
+        ),
+        experiment_name=experiment_name,
+    )
+
+    dataset = InBatchContrastiveDataset(
+        trajectories=trajectories,
+        num_samples=num_samples,
+        config=config,
+        seed=seed,
+    )
+
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=True,
         num_workers=num_workers,
     )
