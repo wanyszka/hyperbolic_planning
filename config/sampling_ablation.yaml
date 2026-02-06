@@ -1,0 +1,142 @@
+# Sampling Strategy Ablation Configuration
+# =========================================
+#
+# This config defines ablation experiments for:
+# 1. Negative formation strategies (plain, mixed, mixed_swapped)
+# 2. Anchor sampling strategies (uniform, geometric)
+#
+# Usage:
+#   # Run configs defined in this file:
+#   python -m scripts.run_sampling_ablation --config config/sampling_ablation.yaml
+#
+#   # Run a pre-defined suite instead:
+#   python -m scripts.run_sampling_ablation --suite full
+#   python -m scripts.run_sampling_ablation --suite extended
+#
+#   # Quick test run:
+#   python -m scripts.run_sampling_ablation --config config/sampling_ablation.yaml --quick
+#
+#   # Dry run (show configs only):
+#   python -m scripts.run_sampling_ablation --config config/sampling_ablation.yaml --dry-run
+
+# =============================================================================
+# Data Configuration
+# =============================================================================
+data:
+  data_dir: "data"
+  regime: "tight"  # Which data regime to use
+  val_fraction: 0.1
+  test_fraction: 0.1
+
+# =============================================================================
+# Model Configuration
+# =============================================================================
+model:
+  geometry: "hyperbolic"  # "hyperbolic" or "euclidean"
+  embedding_dim: 2
+
+# =============================================================================
+# Training Defaults (can be overridden per ablation)
+# =============================================================================
+training_defaults:
+  num_epochs: 100
+  batch_size: 256
+  lr: 0.001
+  temperature: 0.1
+  early_stopping_patience: 20
+
+# =============================================================================
+# Ablation Configurations
+# =============================================================================
+# Each ablation defines:
+#   - description: Human-readable description
+#   - sampling: Anchor sampling parameters
+#   - training: Training parameters (merged with defaults)
+#
+# Negative formation types:
+#   - "plain": Positives from other samples as negatives
+#   - "mixed": Cross-mix coordinates (first from one, second from another)
+#   - "mixed_swapped": Mixed + random coordinate swapping
+
+ablations:
+  # ---------------------------------------------------------------------------
+  # Baseline: Current default behavior
+  # ---------------------------------------------------------------------------
+  baseline:
+    description: "Baseline: plain negatives, uniform anchor sampling"
+    sampling:
+      use_geometric: false
+    training:
+      negative_formation: "plain"
+
+  # ---------------------------------------------------------------------------
+  # Negative Formation Ablations (uniform anchor sampling)
+  # ---------------------------------------------------------------------------
+  mixed_neg:
+    description: "Mixed negatives: cross-mix coordinates"
+    sampling:
+      use_geometric: false
+    training:
+      negative_formation: "mixed"
+
+  mixed_swap_30:
+    description: "Mixed + 30% swap probability"
+    sampling:
+      use_geometric: false
+    training:
+      negative_formation: "mixed_swapped"
+      swap_probability: 0.3
+
+  mixed_swap_50:
+    description: "Mixed + 50% swap probability"
+    sampling:
+      use_geometric: false
+    training:
+      negative_formation: "mixed_swapped"
+      swap_probability: 0.5
+
+  # ---------------------------------------------------------------------------
+  # Anchor Sampling Ablations (plain negatives)
+  # ---------------------------------------------------------------------------
+  geo_anchor_p03:
+    description: "Geometric anchor sampling p=0.3"
+    sampling:
+      use_geometric: true
+      geometric_p: 0.3
+    training:
+      negative_formation: "plain"
+
+  geo_anchor_p05:
+    description: "Geometric anchor sampling p=0.5 (shorter anchors)"
+    sampling:
+      use_geometric: true
+      geometric_p: 0.5
+    training:
+      negative_formation: "plain"
+
+  # ---------------------------------------------------------------------------
+  # Combined: Best of both (hypothesis)
+  # ---------------------------------------------------------------------------
+  combined_mixed_geo:
+    description: "Mixed negatives + geometric anchors"
+    sampling:
+      use_geometric: true
+      geometric_p: 0.3
+    training:
+      negative_formation: "mixed"
+
+  combined_swap_geo:
+    description: "Mixed+swap + geometric anchors"
+    sampling:
+      use_geometric: true
+      geometric_p: 0.3
+    training:
+      negative_formation: "mixed_swapped"
+      swap_probability: 0.5
+
+# =============================================================================
+# Random Seeds
+# =============================================================================
+seeds:
+  data_split: 42
+  training: 123

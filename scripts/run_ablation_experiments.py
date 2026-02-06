@@ -2,15 +2,21 @@
 """
 Run ablation experiments for hyperbolic interval encoders.
 
+Each run creates a unique timestamped directory to prevent overwriting.
+
 Usage:
     python -m scripts.run_ablation_experiments --config config/ablation_experiments.yaml
     python -m scripts.run_ablation_experiments --config config/ablation_experiments.yaml --ablation high_temp
+    python -m scripts.run_ablation_experiments --config config/ablation_experiments.yaml --name my_experiment
 """
 
 import argparse
 import yaml
+import json
 import torch
 import numpy as np
+import hashlib
+from datetime import datetime
 from pathlib import Path
 from itertools import product
 from dataclasses import asdict
@@ -29,6 +35,50 @@ def get_device():
     return "cpu"
 
 
+def create_experiment_dir(base_dir: str, ablation_name: str, custom_name: str = None) -> Path:
+    """
+    Create a unique experiment directory with timestamp.
+
+    Format: {base_dir}/{ablation_name}_{YYYYMMDD}_{HHMMSS}_{short_hash}
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    hash_input = f"{timestamp}_{np.random.randint(0, 10000)}"
+    short_hash = hashlib.md5(hash_input.encode()).hexdigest()[:6]
+
+    if custom_name:
+        dir_name = f"{custom_name}_{timestamp}_{short_hash}"
+    else:
+        dir_name = f"{ablation_name}_{timestamp}_{short_hash}"
+
+    exp_dir = Path(base_dir) / dir_name
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    return exp_dir
+
+
+def save_experiment_metadata(
+    exp_dir: Path,
+    ablation_name: str,
+    ablation_config: dict,
+    full_config: dict,
+) -> None:
+    """Save experiment metadata for reproducibility."""
+    metadata = {
+        "timestamp": datetime.now().isoformat(),
+        "experiment_dir": str(exp_dir),
+        "ablation_name": ablation_name,
+        "ablation_config": ablation_config,
+        "pytorch_version": torch.__version__,
+        "numpy_version": np.__version__,
+        "device": str(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"),
+    }
+
+    with open(exp_dir / "experiment_metadata.json", "w") as f:
+        json.dump(metadata, f, indent=2, default=str)
+
+    with open(exp_dir / "config.yaml", "w") as f:
+        yaml.dump(full_config, f, default_flow_style=False)
+
+
 def run_single_ablation(
     ablation_name: str,
     ablation_config: dict,
@@ -37,6 +87,8 @@ def run_single_ablation(
     eval_config: dict,
     seeds: dict,
     device: str,
+    full_config: dict,
+    custom_name: str = None,
     verbose: bool = True,
 ):
     """Run a single ablation experiment."""
@@ -45,8 +97,13 @@ def run_single_ablation(
     print(f"Description: {ablation_config.get('description', 'N/A')}")
     print(f"{'='*70}")
 
-    results_dir = Path(ablation_config["results_dir"])
-    results_dir.mkdir(parents=True, exist_ok=True)
+    # Create unique timestamped directory
+    base_results_dir = ablation_config.get("results_dir", f"results/{ablation_name}")
+    results_dir = create_experiment_dir(base_results_dir, ablation_name, custom_name)
+    print(f"Results directory: {results_dir}")
+
+    # Save metadata
+    save_experiment_metadata(results_dir, ablation_name, ablation_config, full_config)
 
     rep_config = ablation_config["representation"]
     rep_training = rep_config.get("training", {})
@@ -268,6 +325,16 @@ def run_single_ablation(
             }, policy_path)
             print(f"  Saved: {policy_path}")
 
+    # Save combined results
+    all_results["experiment_dir"] = str(results_dir)
+    all_results["ablation_name"] = ablation_name
+    all_results["timestamp"] = datetime.now().isoformat()
+
+    with open(results_dir / "results.json", "w") as f:
+        json.dump(all_results, f, indent=2, default=str)
+
+    print(f"\nResults saved to: {results_dir}")
+
     return all_results
 
 
@@ -275,6 +342,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run ablation experiments")
     parser.add_argument("--config", type=str, required=True, help="Path to ablation config")
     parser.add_argument("--ablation", type=str, default=None, help="Run specific ablation only")
+    parser.add_argument("--name", type=str, default=None, help="Custom name for experiment directory")
     parser.add_argument("--device", type=str, default="auto", help="Device (auto/cpu/cuda)")
     args = parser.parse_args()
 
@@ -283,7 +351,13 @@ def main():
         config = yaml.safe_load(f)
 
     device = args.device if args.device != "auto" else get_device()
-    print(f"Using device: {device}")
+
+    print("=" * 70)
+    print("ABLATION EXPERIMENTS")
+    print("=" * 70)
+    print(f"Config: {args.config}")
+    print(f"Device: {device}")
+    print("=" * 70)
 
     data_config = config.get("data", {})
     policy_config = config.get("policy", {})
@@ -312,6 +386,8 @@ def main():
             eval_config=eval_config,
             seeds=seeds,
             device=device,
+            full_config=config,
+            custom_name=args.name,
             verbose=verbose,
         )
 
