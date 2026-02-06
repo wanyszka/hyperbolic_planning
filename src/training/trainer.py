@@ -6,12 +6,13 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from typing import Optional, Dict, List, Callable, Tuple, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 from pathlib import Path
 from copy import deepcopy
 
 from .losses import info_nce_loss, hyperbolic_info_nce_loss
+from src.core.datasets.trajectory_dataset import NegativeFormationType
 
 
 @dataclass
@@ -28,6 +29,10 @@ class TrainingConfig:
     early_stopping_patience: int = 20
     print_every: int = 5
     save_every: int = 10
+
+    # In-batch negative formation settings
+    negative_formation: NegativeFormationType = NegativeFormationType.PLAIN
+    swap_probability: float = 0.5  # For MIXED_SWAPPED mode
 
 
 @dataclass
@@ -163,7 +168,8 @@ def train_encoder(
         # Training
         model.train()
         train_loss = _train_encoder_epoch(
-            model, train_loader, optimizer, config.temperature, device, is_hyperbolic
+            model, train_loader, optimizer, config.temperature, device, is_hyperbolic,
+            config=config
         )
 
         if train_loss is None:
@@ -177,7 +183,8 @@ def train_encoder(
         if val_loader:
             model.eval()
             val_loss = _validate_encoder(
-                model, val_loader, config.temperature, device, is_hyperbolic
+                model, val_loader, config.temperature, device, is_hyperbolic,
+                config=config
             )
             val_losses.append(val_loss)
 
@@ -353,8 +360,17 @@ def _create_optimizer(model: nn.Module, lr: float, weight_decay: float, is_hyper
     return optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
 
-def _train_encoder_epoch(model, dataloader, optimizer, temperature, device, is_hyperbolic):
+def _train_encoder_epoch(
+    model,
+    dataloader,
+    optimizer,
+    temperature,
+    device,
+    is_hyperbolic,
+    config: Optional[TrainingConfig] = None,
+):
     """Train encoder for one epoch."""
+    config = config or TrainingConfig()
     total_loss = 0.0
     num_batches = 0
 
@@ -385,13 +401,19 @@ def _train_encoder_epoch(model, dataloader, optimizer, temperature, device, is_h
             anchor_emb = model(anchor)
             positive_emb = model(positive)
 
-            # Use in-batch negatives
+            # Use configurable in-batch negative formation
             if is_hyperbolic:
                 loss = _in_batch_hyperbolic_loss(
-                    anchor_emb, positive_emb, model.manifold, temperature
+                    anchor_emb, positive_emb, model, positive,
+                    model.manifold, temperature,
+                    config.negative_formation, config.swap_probability
                 )
             else:
-                loss = _in_batch_euclidean_loss(anchor_emb, positive_emb, temperature)
+                loss = _in_batch_euclidean_loss(
+                    anchor_emb, positive_emb, model, positive,
+                    temperature,
+                    config.negative_formation, config.swap_probability
+                )
 
         if torch.isnan(loss) or torch.isinf(loss):
             continue
@@ -407,8 +429,16 @@ def _train_encoder_epoch(model, dataloader, optimizer, temperature, device, is_h
     return total_loss / num_batches if num_batches > 0 else None
 
 
-def _validate_encoder(model, dataloader, temperature, device, is_hyperbolic):
+def _validate_encoder(
+    model,
+    dataloader,
+    temperature,
+    device,
+    is_hyperbolic,
+    config: Optional[TrainingConfig] = None,
+):
     """Validate encoder on a dataset."""
+    config = config or TrainingConfig()
     total_loss = 0.0
     num_batches = 0
 
@@ -438,12 +468,19 @@ def _validate_encoder(model, dataloader, temperature, device, is_hyperbolic):
                 anchor_emb = model(anchor)
                 positive_emb = model(positive)
 
+                # Use configurable in-batch negative formation
                 if is_hyperbolic:
                     loss = _in_batch_hyperbolic_loss(
-                        anchor_emb, positive_emb, model.manifold, temperature
+                        anchor_emb, positive_emb, model, positive,
+                        model.manifold, temperature,
+                        config.negative_formation, config.swap_probability
                     )
                 else:
-                    loss = _in_batch_euclidean_loss(anchor_emb, positive_emb, temperature)
+                    loss = _in_batch_euclidean_loss(
+                        anchor_emb, positive_emb, model, positive,
+                        temperature,
+                        config.negative_formation, config.swap_probability
+                    )
 
             if not (torch.isnan(loss) or torch.isinf(loss)):
                 total_loss += loss.item()
@@ -525,54 +562,199 @@ def _encode_negatives(model, negatives, is_hyperbolic):
     return emb.view(batch_size, num_neg, -1)
 
 
-def _in_batch_euclidean_loss(anchor_emb, positive_emb, temperature):
-    """Compute InfoNCE loss with in-batch negatives (Euclidean)."""
+def _form_mixed_negative_intervals(
+    positives: torch.Tensor,
+    swap_prob: float = 0.0
+) -> torch.Tensor:
+    """
+    Form mixed negative intervals by cross-mixing coordinates from different positives.
+
+    Each positive is [start, end]. Mixed negatives take:
+    - start (first coord) from one sample
+    - end (second coord) from another sample
+
+    Note: Result may have first > second - this is intentional as hard negatives.
+    While temporally nonsensical, the state values provide useful contrastive signal.
+
+    Args:
+        positives: Positive intervals (B, 2) where columns are [start, end]
+        swap_prob: Probability of swapping start and end coordinates
+
+    Returns:
+        Mixed negative intervals (B, 2)
+    """
+    batch_size = positives.shape[0]
+    device = positives.device
+
+    # Shuffle indices for mixing
+    shuffle_idx = torch.randperm(batch_size, device=device)
+
+    # First coord from original, second from shuffled
+    # May result in first > second - allowed as hard negative
+    mixed = torch.stack([
+        positives[:, 0],           # Start from original
+        positives[shuffle_idx, 1]  # End from shuffled
+    ], dim=1)
+
+    # Optional swap (independent of validity)
+    if swap_prob > 0:
+        swap_mask = torch.rand(batch_size, device=device) < swap_prob
+        swapped = torch.stack([mixed[:, 1], mixed[:, 0]], dim=1)
+        mixed = torch.where(swap_mask.unsqueeze(1), swapped, mixed)
+
+    return mixed
+
+
+def _in_batch_euclidean_loss(
+    anchor_emb: torch.Tensor,
+    positive_emb: torch.Tensor,
+    model: nn.Module,
+    positives_raw: torch.Tensor,
+    temperature: float,
+    negative_formation: NegativeFormationType,
+    swap_probability: float = 0.5,
+) -> torch.Tensor:
+    """
+    Compute InfoNCE loss with configurable negative formation (Euclidean).
+
+    Args:
+        anchor_emb: Anchor embeddings (B, D)
+        positive_emb: Positive embeddings (B, D)
+        model: Encoder model (for encoding mixed negatives)
+        positives_raw: Raw positive intervals (B, 2) before encoding
+        temperature: Temperature for softmax
+        negative_formation: Type of negative formation
+        swap_probability: Probability of swapping (for MIXED_SWAPPED)
+
+    Returns:
+        Scalar loss tensor
+    """
     batch_size = anchor_emb.shape[0]
 
-    # Compute all pairwise distances
-    # anchor_emb: (B, D), positive_emb: (B, D)
-    # distances: (B, B) where [i,j] = ||anchor_i - positive_j||
-    diff = anchor_emb.unsqueeze(1) - positive_emb.unsqueeze(0)  # (B, B, D)
-    distances = torch.norm(diff, dim=-1)  # (B, B)
+    if negative_formation == NegativeFormationType.PLAIN:
+        # Current behavior: use positives as negatives
+        # distances[i,j] = ||anchor_i - positive_j||
+        diff = anchor_emb.unsqueeze(1) - positive_emb.unsqueeze(0)
+        distances = torch.norm(diff, dim=-1)
+        similarities = -distances / temperature
+        labels = torch.arange(batch_size, device=anchor_emb.device)
+        return F.cross_entropy(similarities, labels)
 
-    # Convert to similarities (negative distance)
-    similarities = -distances / temperature
+    # MIXED or MIXED_SWAPPED: form synthetic negatives
+    swap_prob = swap_probability if negative_formation == NegativeFormationType.MIXED_SWAPPED else 0.0
+    mixed_intervals = _form_mixed_negative_intervals(positives_raw, swap_prob)
 
-    # Labels: diagonal elements are positives
-    labels = torch.arange(batch_size, device=anchor_emb.device)
+    # Encode mixed negatives
+    mixed_emb = model(mixed_intervals)
 
-    return F.cross_entropy(similarities, labels)
+    # Compute distances
+    # Positive distance (diagonal): anchor_i to positive_i
+    pos_dist = torch.norm(anchor_emb - positive_emb, dim=-1)  # (B,)
+
+    # Negative distances: anchor_i to all mixed_j
+    diff_mixed = anchor_emb.unsqueeze(1) - mixed_emb.unsqueeze(0)  # (B, B, D)
+    neg_distances = torch.norm(diff_mixed, dim=-1)  # (B, B)
+
+    # Build logits: positive similarity first, then negative similarities
+    pos_sim = -pos_dist / temperature  # (B,)
+    neg_sim = -neg_distances / temperature  # (B, B)
+
+    # Logits: [pos_sim, neg_sims]
+    logits = torch.cat([pos_sim.unsqueeze(1), neg_sim], dim=1)  # (B, B+1)
+    labels = torch.zeros(batch_size, dtype=torch.long, device=anchor_emb.device)
+
+    return F.cross_entropy(logits, labels)
 
 
-def _in_batch_hyperbolic_loss(anchor_emb, positive_emb, manifold, temperature):
-    """Compute InfoNCE loss with in-batch negatives (Hyperbolic)."""
+def _in_batch_hyperbolic_loss(
+    anchor_emb,
+    positive_emb,
+    model: nn.Module,
+    positives_raw: torch.Tensor,
+    manifold,
+    temperature: float,
+    negative_formation: NegativeFormationType,
+    swap_probability: float = 0.5,
+) -> torch.Tensor:
+    """
+    Compute InfoNCE loss with configurable negative formation (Hyperbolic).
+
+    Args:
+        anchor_emb: Anchor embeddings (ManifoldTensor)
+        positive_emb: Positive embeddings (ManifoldTensor)
+        model: Encoder model (for encoding mixed negatives)
+        positives_raw: Raw positive intervals (B, 2) before encoding
+        manifold: Hyperbolic manifold
+        temperature: Temperature for softmax
+        negative_formation: Type of negative formation
+        swap_probability: Probability of swapping (for MIXED_SWAPPED)
+
+    Returns:
+        Scalar loss tensor
+    """
     from hypll.tensors.manifold_tensor import ManifoldTensor
 
     batch_size = anchor_emb.tensor.shape[0]
+    anchor_tensor = anchor_emb.tensor
+    device = anchor_tensor.device
 
-    # Extract tensors
-    anchor_tensor = anchor_emb.tensor  # (B, D)
-    positive_tensor = positive_emb.tensor  # (B, D)
+    if negative_formation == NegativeFormationType.PLAIN:
+        # Vectorized pairwise distances
+        # Expand anchor: (batch, dim) -> (batch, batch, dim)
+        anchor_expanded = ManifoldTensor(
+            anchor_tensor.unsqueeze(1).expand(batch_size, batch_size, -1),
+            manifold=manifold
+        )
+        # Expand positive: (batch, dim) -> (batch, batch, dim)
+        positive_expanded = ManifoldTensor(
+            positive_emb.tensor.unsqueeze(0).expand(batch_size, batch_size, -1),
+            manifold=manifold
+        )
+        dist = manifold.dist(anchor_expanded, positive_expanded)
+        distances = dist.tensor if isinstance(dist, ManifoldTensor) else dist
+        if distances.dim() > 2:
+            distances = distances.squeeze(-1)
 
-    # Compute pairwise hyperbolic distances
-    # We need to compute d_H(anchor_i, positive_j) for all i, j
-    distances = torch.zeros(batch_size, batch_size, device=anchor_tensor.device)
+        similarities = -distances / temperature
+        labels = torch.arange(batch_size, device=device)
+        return F.cross_entropy(similarities, labels)
 
-    for i in range(batch_size):
-        anchor_i = ManifoldTensor(anchor_tensor[i:i+1].expand(batch_size, -1), manifold=manifold)
-        dist_i = manifold.dist(anchor_i, positive_emb)
-        if isinstance(dist_i, ManifoldTensor):
-            distances[i] = dist_i.tensor.squeeze()
-        else:
-            distances[i] = dist_i.squeeze()
+    # MIXED or MIXED_SWAPPED: form synthetic negatives
+    swap_prob = swap_probability if negative_formation == NegativeFormationType.MIXED_SWAPPED else 0.0
+    mixed_intervals = _form_mixed_negative_intervals(positives_raw, swap_prob)
 
-    # Convert to similarities
-    similarities = -distances / temperature
+    # Encode mixed negatives
+    mixed_emb = model(mixed_intervals)
 
-    # Labels
-    labels = torch.arange(batch_size, device=anchor_tensor.device)
+    # Compute positive distances (anchor_i to positive_i)
+    pos_dist = manifold.dist(anchor_emb, positive_emb)
+    if isinstance(pos_dist, ManifoldTensor):
+        pos_dist = pos_dist.tensor.squeeze()
+    else:
+        pos_dist = pos_dist.squeeze()
 
-    return F.cross_entropy(similarities, labels)
+    # Compute negative distances: anchor_i to all mixed_j (vectorized)
+    anchor_expanded = ManifoldTensor(
+        anchor_tensor.unsqueeze(1).expand(batch_size, batch_size, -1),
+        manifold=manifold
+    )
+    mixed_expanded = ManifoldTensor(
+        mixed_emb.tensor.unsqueeze(0).expand(batch_size, batch_size, -1),
+        manifold=manifold
+    )
+    dist = manifold.dist(anchor_expanded, mixed_expanded)
+    neg_distances = dist.tensor if isinstance(dist, ManifoldTensor) else dist
+    if neg_distances.dim() > 2:
+        neg_distances = neg_distances.squeeze(-1)
+
+    # Build logits
+    pos_sim = -pos_dist / temperature  # (B,)
+    neg_sim = -neg_distances / temperature  # (B, B)
+
+    logits = torch.cat([pos_sim.unsqueeze(1), neg_sim], dim=1)  # (B, B+1)
+    labels = torch.zeros(batch_size, dtype=torch.long, device=device)
+
+    return F.cross_entropy(logits, labels)
 
 
 def _save_checkpoint(model, optimizer, epoch, loss, save_dir, prefix="encoder"):
